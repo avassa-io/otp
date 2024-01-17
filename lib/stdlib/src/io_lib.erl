@@ -360,6 +360,8 @@ build_text(FormatList) ->
     try io_lib_format:build(FormatList)
     catch
         C:R:S ->
+            erlang:display(R),
+            erlang:display(S),
             test_modules_loaded(C, R, S),
             erlang:error(badarg, [FormatList])
     end.
@@ -520,6 +522,7 @@ write(Term, Options) when is_list(Options) ->
     Encoding = get_option(encoding, Options, epp:default_encoding()),
     CharsLimit = get_option(chars_limit, Options, -1),
     MapsOrder = get_option(maps_order, Options, undefined),
+    PrintableStringLimit = get_option(printable_string_limit, Options, -1),
     if
         Depth =:= 0; CharsLimit =:= 0 ->
             "...";
@@ -528,7 +531,8 @@ write(Term, Options) when is_list(Options) ->
         is_integer(CharsLimit), CharsLimit > 0 ->
             RecDefFun = fun(_, _) -> no end,
             If = io_lib_pretty:intermediate
-                 (Term, Depth, CharsLimit, RecDefFun, Encoding, _Str=false, MapsOrder),
+                 (Term, Depth, PrintableStringLimit,
+                  CharsLimit, RecDefFun, Encoding, _Str=false, MapsOrder),
             io_lib_pretty:write(If)
     end;
 write(Term, Depth) ->
