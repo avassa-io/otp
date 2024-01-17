@@ -2533,7 +2533,13 @@ system_code_change([Name, State, CbCache, Time, HibernateAfterTimeout], _Module,
 
 -doc false.
 system_get_state([_Name, State, _Mod, _Time, _HibernateAfterTimeout]) ->
-    {ok, State}.
+    case erlang:process_flag(sensitive, true) of
+        false ->
+            erlang:process_flag(sensitive, false),
+            {ok, State};
+        true ->
+            {ok, hidden}
+    end.
 
 -doc false.
 system_replace_state(StateFun, [Name, State, CbCache, Time, HibernateAfterTimeout]) ->
