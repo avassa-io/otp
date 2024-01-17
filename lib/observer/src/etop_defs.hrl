@@ -19,9 +19,15 @@
 %%
 %% %CopyrightEnd%
 %%
+-define(SYSFORM,
+	" ~-72w~10s~n"
+	" Load:  cpu  ~8w               Memory:  total    ~11s    binary   ~11s~n"
+	"        procs~8w                        processes~11s    code     ~11s~n"
+	"        runq ~8w                        atom     ~11s    ets      ~11s~n").
 
 -record(opts, {node=node(), port = 8415, accum = false, intv = 5000, lines = 10,
 	       width = 700, height = 340, sort = runtime, tracing = on,
+               human_readable = false,
 	       %% Other state information
 	       out_mod=etop_txt, out_proc, server, host, tracer, session, store,
 	       accum_tab, remote, shell_mode}).
