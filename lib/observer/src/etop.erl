@@ -85,7 +85,8 @@ For details about Erlang Top, see the [User's Guide](etop_ug.md).
 """.
 -author('siri@erix.ericsson.se').
 
--export([start/0, start/1, config/2, stop/0, dump/1, help/0]).
+-export([spawn/0, spawn/1, start/0, start/1, config/2, stop/0, dump/1, help/0]).
+-export([sort_mem/0, sort_reds/0]).
 %% Internal
 -export([update/1]).
 -export([loadinfo/2, meminfo/2, getopt/2]).
@@ -137,6 +138,13 @@ stop() ->
 	Pid when is_pid(Pid) -> etop_server ! stop
     end.
 
+-spec sort_mem() -> ok | {error, term()}.
+sort_mem() ->
+    config(sort, memory).
+-spec sort_reds() -> ok | {error, term()}.
+sort_reds() ->
+    config(sort, reductions).
+
 -doc """
 Changes the configuration parameters of the tool during runtime. Allowed
 parameters are `lines`, `interval`, `accumulate`, and `sort`.
@@ -173,6 +181,16 @@ dump(File) ->
 	{ok,Fd} -> etop_server ! {dump,Fd}, ok;
 	Error -> Error
     end.
+
+-spec spawn() -> pid().
+spawn() ->
+    etop:spawn([]).
+-spec spawn(Options) -> pid() when
+      Options :: [{Key,Value}],
+      Key :: atom(),
+      Value :: term().
+spawn(Opts) ->
+    spawn_link(fun() -> start(Opts) end).
 
 -doc """
 Starts `etop`. Notice that `etop` is preferably started with the `etop` script.
@@ -417,6 +435,9 @@ handle_args([{tracing, OnOff}| R], Config) when is_atom(OnOff) ->
     handle_args(R, NewC);
 handle_args([{tracing, [OnOff]}| R], Config) when is_list(OnOff) ->
     NewC = Config#opts{tracing=list_to_atom(OnOff)},
+    handle_args(R, NewC);
+handle_args([human_readable | R], Config) ->
+    NewC = Config#opts{human_readable = true},
     handle_args(R, NewC);
 
 handle_args([_| R], C) ->
