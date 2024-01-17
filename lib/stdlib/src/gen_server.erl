@@ -1291,7 +1291,13 @@ system_code_change([Name, State, Mod, Time, HibernateAfterTimeout], _Module, Old
     end.
 
 system_get_state([_Name, State, _Mod, _Time, _HibernateAfterTimeout]) ->
-    {ok, State}.
+    case erlang:process_flag(sensitive, true) of
+        false ->
+            erlang:process_flag(sensitive, false),
+            {ok, State};
+        true ->
+            {ok, hidden}
+    end.
 
 system_replace_state(StateFun, [Name, State, Mod, Time, HibernateAfterTimeout]) ->
     NState = StateFun(State),
