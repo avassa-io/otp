@@ -83,7 +83,7 @@ handle_data(Last, {_, Pid, out, _, Time2} = G, Store) ->
     case lists:keytake(Pid, 1, Last) of
          {_, {_, Time1}, New} ->
              Elapsed = elapsed(Time1, Time2),
-             case ets:member(Store,Pid) of
+             _ = case ets:member(Store,Pid) of
                   true -> ets:update_counter(Store, Pid, Elapsed);
                   false -> ets:insert(Store,{Pid,Elapsed})
              end,
