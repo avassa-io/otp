@@ -26,15 +26,19 @@
 
 %%%-----------------------------------------------------------------
 %%% Types
--type config() :: #{chars_limit     => pos_integer() | unlimited,
-                    depth           => pos_integer() | unlimited,
-                    legacy_header   => boolean(),
-                    max_size        => pos_integer() | unlimited,
-                    report_cb       => logger:report_cb(),
-                    single_line     => boolean(),
-                    template        => template(),
-                    time_designator => byte(),
-                    time_offset     => integer() | [byte()]}.
+-type config() ::
+        #{
+          chars_limit            => pos_integer() | unlimited,
+          depth                  => pos_integer() | unlimited,
+          printable_string_limit => pos_integer() | unlimited,
+          legacy_header          => boolean(),
+          max_size               => pos_integer() | unlimited,
+          report_cb              => logger:report_cb(),
+          single_line            => boolean(),
+          template               => template(),
+          time_designator        => byte(),
+          time_offset            => integer() | [byte()]
+         }.
 -type template() :: [metakey() | {metakey(),template(),template()} | unicode:chardata()].
 -type metakey() :: atom() | [atom()].
 
@@ -70,7 +74,15 @@ format(#{level:=Level,msg:=Msg0,meta:=Meta},Config0)
                                 end,
                             Config#{chars_limit=>Size}
                     end,
-                MsgStr0 = format_msg(Msg0,Meta1,Config1),
+                Config2 =
+                    case maps:get(printable_string_limit, Config1) of
+                        unlimited ->
+                            Config1;
+                        PrintablStringLimit ->
+                            Config1#{printable_string_limit =>
+                                         PrintablStringLimit}
+                    end,
+                MsgStr0 = format_msg(Msg0,Meta1,Config2),
                 case maps:get(single_line,Config) of
                     true ->
                         %% Trim leading and trailing whitespaces, and replace
@@ -163,8 +175,8 @@ to_string(X,Config) when is_list(X) ->
 to_string(X,Config) ->
     io_lib:format(p(Config),[X]).
 
-printable_list([]) ->
-    false;
+%printable_list([]) ->
+%    false;
 printable_list(X) ->
     io_lib:printable_list(X).
 
@@ -188,7 +200,7 @@ format_msg({report,Report},#{report_cb:=Fun}=Meta,Config) when is_function(Fun,1
                        Meta,Config)
     end;
 format_msg({report,Report},#{report_cb:=Fun}=Meta,Config) when is_function(Fun,2) ->
-    try Fun(Report,maps:with([depth,chars_limit,single_line],Config)) of
+    try Fun(Report,maps:with([depth,chars_limit,printable_string_limit,single_line],Config)) of
         Chardata when ?IS_STRING(Chardata) ->
             try chardata_to_list(Chardata) % already size limited by report_cb
             catch _:_ ->
@@ -211,12 +223,19 @@ format_msg({report,Report},Meta,Config) ->
                Meta#{report_cb=>fun logger:format_report/1},
                Config);
 format_msg(Msg,_Meta,#{depth:=Depth,chars_limit:=CharsLimit,
+                       printable_string_limit:=PrintablStringLimit,
                        single_line:=Single}) ->
-    Opts = chars_limit_to_opts(CharsLimit),
+    Opts0 = chars_limit_to_opts(CharsLimit),
+    Opts = printable_string_limit_to_opts(PrintablStringLimit, Opts0),
     format_msg(Msg, Depth, Opts, Single).
 
 chars_limit_to_opts(unlimited) -> [];
 chars_limit_to_opts(CharsLimit) -> [{chars_limit,CharsLimit}].
+
+printable_string_limit_to_opts(unlimited, Opts) ->
+    Opts;
+printable_string_limit_to_opts(PrintablStringLimit, Opts) ->
+    [{printable_string_limit, PrintablStringLimit} | Opts].
 
 format_msg({Format0,Args},Depth,Opts,Single) ->
     try
@@ -378,6 +397,7 @@ month(12) -> "Dec".
 add_default_config(Config0) ->
     Default =
         #{chars_limit=>unlimited,
+          printable_string_limit=>unlimited,
           error_logger_notice_header=>info,
           legacy_header=>false,
           single_line=>true,
@@ -453,6 +473,7 @@ check_config(Config) ->
     {error,{invalid_formatter_config,?MODULE,Config}}.
 
 do_check_config([{Type,L}|Config]) when Type == chars_limit;
+                                        Type == printable_string_limit;
                                         Type == depth;
                                         Type == max_size ->
     case check_limit(L) of

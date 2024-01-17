@@ -71,6 +71,7 @@ build(Cs) ->
 
 build(Cs, Options) ->
     CharsLimit = get_option(chars_limit, Options, -1),
+    Pl = get_option(printable_string_limit, Options, -1),
     Res1 = build_small(Cs),
     {P, S, W, Other} = count_small(Res1),
     case P + S + W of
@@ -78,7 +79,7 @@ build(Cs, Options) ->
             Res1;
         NumOfLimited ->
             RemainingChars = sub(CharsLimit, Other),
-            build_limited(Res1, P, NumOfLimited, RemainingChars, 0)
+            build_limited(Res1, P, NumOfLimited, RemainingChars, Pl, 0)
     end.
 
 %% Parse all control sequences in the format string.
@@ -274,12 +275,12 @@ build_small([]) -> [].
 
 build_limited([#{control_char := C, args := As, width := F, adjust := Ad,
                  precision := P, pad_char := Pad, encoding := Enc,
-                 strings := Str} | Cs], NumOfPs0, Count0, MaxLen0, I) ->
+                 strings := Str} | Cs], NumOfPs0, Count0, MaxLen0, Pl, I) ->
     MaxChars = if
                    MaxLen0 < 0 -> MaxLen0;
                    true -> MaxLen0 div Count0
                end,
-    S = control_limited(C, As, F, Ad, P, Pad, Enc, Str, MaxChars, I),
+    S = control_limited(C, As, F, Ad, P, Pad, Enc, Str, MaxChars, Pl, I),
     NumOfPs = decr_pc(C, NumOfPs0),
     Count = Count0 - 1,
     MaxLen = if
@@ -291,16 +292,16 @@ build_limited([#{control_char := C, args := As, width := F, adjust := Ad,
              end,
     if
 	NumOfPs > 0 -> [S|build_limited(Cs, NumOfPs, Count,
-                                        MaxLen, indentation(S, I))];
-	true -> [S|build_limited(Cs, NumOfPs, Count, MaxLen, I)]
+                                        MaxLen, Pl, indentation(S, I))];
+	true -> [S|build_limited(Cs, NumOfPs, Count, MaxLen, Pl, I)]
     end;
-build_limited([$\n|Cs], NumOfPs, Count, MaxLen, _I) ->
-    [$\n|build_limited(Cs, NumOfPs, Count, MaxLen, 0)];
-build_limited([$\t|Cs], NumOfPs, Count, MaxLen, I) ->
-    [$\t|build_limited(Cs, NumOfPs, Count, MaxLen, ((I + 8) div 8) * 8)];
-build_limited([C|Cs], NumOfPs, Count, MaxLen, I) ->
-    [C|build_limited(Cs, NumOfPs, Count, MaxLen, I+1)];
-build_limited([], _, _, _, _) -> [].
+build_limited([$\n|Cs], NumOfPs, Count, MaxLen, Pl, _I) ->
+    [$\n|build_limited(Cs, NumOfPs, Count, MaxLen, Pl, 0)];
+build_limited([$\t|Cs], NumOfPs, Count, MaxLen, Pl, I) ->
+    [$\t|build_limited(Cs, NumOfPs, Count, MaxLen, Pl, ((I + 8) div 8) * 8)];
+build_limited([C|Cs], NumOfPs, Count, MaxLen, Pl, I) ->
+    [C|build_limited(Cs, NumOfPs, Count, MaxLen, Pl, I+1)];
+build_limited([], _, _, _, _, _) -> [].
 
 decr_pc($p, Pc) -> Pc - 1;
 decr_pc($P, Pc) -> Pc - 1;
@@ -371,24 +372,26 @@ control_small($n, [], F, Adj, P, Pad, _Enc) -> newline(F, Adj, P, Pad);
 control_small($i, [_A], _F, _Adj, _P, _Pad, _Enc) -> [];
 control_small(_C, _As, _F, _Adj, _P, _Pad, _Enc) -> not_small.
 
-control_limited($s, [L0], F, Adj, P, Pad, latin1=Enc, _Str, CL, _I) ->
+control_limited($s, [L0], F, Adj, P, Pad, latin1=Enc, _Str, CL, _Pl, _I) ->
     L = iolist_to_chars(L0, F, CL),
     string(L, limit_field(F, CL), Adj, P, Pad, Enc);
-control_limited($s, [L0], F, Adj, P, Pad, unicode=Enc, _Str, CL, _I) ->
+control_limited($s, [L0], F, Adj, P, Pad, unicode=Enc, _Str, CL, _Pl, _I) ->
     L = cdata_to_chars(L0, F, CL),
     uniconv(string(L, limit_field(F, CL), Adj, P, Pad, Enc));
-control_limited($w, [A], F, Adj, P, Pad, Enc, _Str, CL, _I) ->
-    Chars = io_lib:write(A, [{depth, -1}, {encoding, Enc}, {chars_limit, CL}]),
+control_limited($w, [A], F, Adj, P, Pad, Enc, _Str, CL, Pl, _I) ->
+    Chars = io_lib:write(A, [{depth, -1}, {encoding, Enc},
+                             {chars_limit, CL}, {printable_string_limit, Pl}]),
     term(Chars, F, Adj, P, Pad);
-control_limited($p, [A], F, Adj, P, Pad, Enc, Str, CL, I) ->
-    print(A, -1, F, Adj, P, Pad, Enc, Str, CL, I);
-control_limited($W, [A,Depth], F, Adj, P, Pad, Enc, _Str, CL, _I)
+control_limited($p, [A], F, Adj, P, Pad, Enc, Str, CL, Pl, I) ->
+    print(A, -1, F, Adj, P, Pad, Enc, Str, CL, Pl, I);
+control_limited($W, [A,Depth], F, Adj, P, Pad, Enc, _Str, CL, Pl, _I)
            when is_integer(Depth) ->
-    Chars = io_lib:write(A, [{depth, Depth}, {encoding, Enc}, {chars_limit, CL}]),
+    Chars = io_lib:write(A, [{depth, Depth}, {encoding, Enc},
+                             {chars_limit, CL}, {printable_string_limit, Pl}]),
     term(Chars, F, Adj, P, Pad);
-control_limited($P, [A,Depth], F, Adj, P, Pad, Enc, Str, CL, I)
+control_limited($P, [A,Depth], F, Adj, P, Pad, Enc, Str, CL, Pl, I)
            when is_integer(Depth) ->
-    print(A, Depth, F, Adj, P, Pad, Enc, Str, CL, I).
+    print(A, Depth, F, Adj, P, Pad, Enc, Str, CL, Pl, I).
 
 -ifdef(UNICODE_AS_BINARIES).
 uniconv(C) ->
@@ -425,12 +428,13 @@ term(T, F, Adj, P0, Pad) ->
 %% Print a term. Field width sets maximum line length, Precision sets
 %% initial indentation.
 
-print(T, D, none, Adj, P, Pad, E, Str, ChLim, I) ->
-    print(T, D, 80, Adj, P, Pad, E, Str, ChLim, I);
-print(T, D, F, Adj, none, Pad, E, Str, ChLim, I) ->
-    print(T, D, F, Adj, I+1, Pad, E, Str, ChLim, I);
-print(T, D, F, right, P, _Pad, Enc, Str, ChLim, _I) ->
+print(T, D, none, Adj, P, Pad, E, Str, ChLim, Pl, I) ->
+    print(T, D, 80, Adj, P, Pad, E, Str, ChLim, Pl, I);
+print(T, D, F, Adj, none, Pad, E, Str, ChLim, Pl, I) ->
+    print(T, D, F, Adj, I+1, Pad, E, Str, ChLim, Pl, I);
+print(T, D, F, right, P, _Pad, Enc, Str, ChLim, Pl, _I) ->
     Options = [{chars_limit, ChLim},
+               {printable_string_limit, Pl},
                {column, P},
                {line_length, F},
                {depth, D},
