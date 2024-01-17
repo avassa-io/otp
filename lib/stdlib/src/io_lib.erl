@@ -78,7 +78,7 @@ used for flattening deep lists.
 -export([scan_format/2,unscan_format/1,build_text/1,build_text/2]).
 -export([print/1,print/4,indentation/2]).
 
--export([write/1,write/2,write/3,write/5,bwrite/2]).
+-export([write/1,write/2,write/3,write/6,bwrite/2]).
 -export([nl/0,format_prompt/1,format_prompt/2]).
 -export([write_binary/3]).
 -export([write_atom/1,write_string/1,write_string/2,write_latin1_string/1,
@@ -106,7 +106,7 @@ used for flattening deep lists.
 
 -export([chars_length/1]).
 
--export([write_bin/5, write_string_bin/3, write_binary_bin/4]).
+-export([write_bin/6, write_string_bin/3, write_binary_bin/4]).
 
 -export_type([chars/0, latin1_string/0, continuation/0,
               fread_error/0, fread_item/0, format_spec/0, chars_limit/0]).
@@ -434,6 +434,8 @@ build_text(FormatList) ->
     try io_lib_format:build(FormatList)
     catch
         C:R:S ->
+            erlang:display(R),
+            erlang:display(S),
             test_modules_loaded(C, R, S),
             erlang:error(badarg, [FormatList])
     end.
@@ -587,7 +589,8 @@ _Example:_
       Option :: {'chars_limit', CharsLimit}
               | {'depth', Depth}
               | {'encoding', 'latin1' | 'utf8' | 'unicode'}
-              | {'maps_order', maps:iterator_order()},
+              | {'maps_order', maps:iterator_order()}
+              | {'printable_string_limit', integer()},
       CharsLimit :: chars_limit(),
       Depth :: depth().
 
@@ -596,12 +599,13 @@ write(Term, Options) when is_list(Options) ->
     Encoding = get_option(encoding, Options, epp:default_encoding()),
     CharsLimit = get_option(chars_limit, Options, -1),
     MapsOrder = get_option(maps_order, Options, undefined),
-    write(Term, Depth, Encoding, MapsOrder, CharsLimit);
+    PrintableStringLimit = get_option(printable_string_limit, Options, -1),
+    write(Term, Depth, Encoding, MapsOrder, CharsLimit, PrintableStringLimit);
 write(Term, Depth) ->
     write(Term, [{depth, Depth}, {encoding, latin1}]).
 
 -doc false.
-write(Term, Depth, Encoding, MapsOrder, CharsLimit) ->
+write(Term, Depth, Encoding, MapsOrder, CharsLimit, PrintableStringLimit) ->
     if
         Depth =:= 0; CharsLimit =:= 0 ->
             "...";
@@ -610,7 +614,8 @@ write(Term, Depth, Encoding, MapsOrder, CharsLimit) ->
         is_integer(CharsLimit), CharsLimit > 0 ->
             RecDefFun = fun(_, _) -> no end,
             If = io_lib_pretty:intermediate
-                 (Term, Depth, CharsLimit, RecDefFun, Encoding, _Str=false, MapsOrder),
+                 (Term, Depth, PrintableStringLimit,
+                  CharsLimit, RecDefFun, Encoding, _Str=false, MapsOrder),
             io_lib_pretty:write(If)
     end.
 
@@ -634,19 +639,21 @@ bwrite(Term, Options) when is_list(Options) ->
     InEncoding = get_option(encoding, Options, epp:default_encoding()),
     CharsLimit = get_option(chars_limit, Options, -1),
     MapsOrder = get_option(maps_order, Options, undefined),
-    {S, _Sz} = write_bin(Term, Depth, InEncoding, MapsOrder, CharsLimit),
+    PrintableStringLimit = get_option(printable_string_limit, Options, -1),
+    {S, _Sz} = write_bin(Term, Depth, InEncoding, MapsOrder, CharsLimit, PrintableStringLimit),
     S.
 
 -doc false.
--spec write_bin(Term, Depth, InEncoding, MapsOrder, CharsLimit) ->
+-spec write_bin(Term, Depth, InEncoding, MapsOrder, CharsLimit, PrintableStringLimit) ->
           {unicode:unicode_binary(), Sz::integer()} when
       Term :: term(),
       Depth :: depth(),
       InEncoding :: 'latin1' | 'utf8' | 'unicode',
       MapsOrder :: maps:iterator_order() | undefined,
-      CharsLimit :: chars_limit().
+      CharsLimit :: chars_limit(),
+      PrintableStringLimit :: integer().
 
-write_bin(Term, Depth, InEncoding, MapsOrder, CharsLimit) ->
+write_bin(Term, Depth, InEncoding, MapsOrder, CharsLimit, PrintableStringLimit) ->
     if
         Depth =:= 0; CharsLimit =:= 0 ->
             {<<"...">>, 3};
@@ -654,7 +661,8 @@ write_bin(Term, Depth, InEncoding, MapsOrder, CharsLimit) ->
             write_bin1(Term, Depth, InEncoding, MapsOrder, 0, <<>>);
         is_integer(CharsLimit), CharsLimit > 0 ->
             RecDefFun = fun(_, _) -> no end,
-            If = io_lib_pretty:intermediate(Term, Depth, CharsLimit, RecDefFun,
+            If = io_lib_pretty:intermediate(Term, Depth, PrintableStringLimit, CharsLimit,
+                                            RecDefFun,
                                             {InEncoding, utf8}, _Str=false, MapsOrder),
             {_, Len, _, _} = If,
             Bin = io_lib_pretty:write(If, {unicode,utf8}),
