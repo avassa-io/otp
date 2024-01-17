@@ -2672,7 +2672,13 @@ system_code_change([#server_data{module = Mod} = ServerData, State, Timer, Hib],
 
 -doc false.
 system_get_state([_ServerData, State, _Timer, _Hib]) ->
-    {ok, State}.
+    case erlang:process_flag(sensitive, true) of
+        false ->
+            erlang:process_flag(sensitive, false),
+            {ok, State};
+        true ->
+            {ok, hidden}
+    end.
 
 -doc false.
 system_replace_state(StateFun, [ServerData, State, Timer, Hib]) ->
