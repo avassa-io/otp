@@ -140,6 +140,24 @@ native_name_encoding() ->
 
 %%% End of BIFs
 
+%%%-----------------------------------------------------------------
+
+echk({error, {_, enospc}} = Err) ->
+    try
+        apply(disaster_enospc, enospc, [])
+    catch
+        error:undef ->
+            Err
+    end;
+echk({error, enospc} = Err) ->
+    try
+        apply(disaster_enospc, enospc, [])
+    catch
+        error:undef ->
+            Err
+    end;
+echk(Res) ->
+    Res.
 
 %%%-----------------------------------------------------------------
 %%% General functions
@@ -521,9 +539,9 @@ open(Item, ModeList) when is_list(ModeList) ->
                     Error
             end;
         {true, false} ->
-            raw_file_io:open(file_name(Item), ModeList);
+            echk(raw_file_io:open(file_name(Item), ModeList));
         {false, true} ->
-            ram_file:open(Item, ModeList);
+            echk(ram_file:open(Item, ModeList));
         {true, true} ->
             erlang:error(badarg, [Item, ModeList])
     end;
@@ -552,7 +570,7 @@ close(File) when is_pid(File) ->
 %%    exit(File, close),
 %%    ok;
 close(#file_descriptor{module = Module} = Handle) ->
-    Module:close(Handle);
+    echk(Module:close(Handle));
 close(_) ->
     {error, badarg}.
 
@@ -579,7 +597,7 @@ advise(_, _, _, _) ->
 allocate(File, Offset, Length) when is_pid(File) ->
     file_request(File, {allocate, Offset, Length});
 allocate(#file_descriptor{module = Module} = Handle, Offset, Length) ->
-    Module:allocate(Handle, Offset, Length).
+    echk(Module:allocate(Handle, Offset, Length)).
 
 -spec read(IoDevice, Number) -> {ok, Data} | eof | {error, Reason} when
       IoDevice :: io_device() | io:device(),
@@ -675,12 +693,12 @@ pread(_, _, _) ->
 write(File, Bytes) when (is_pid(File) orelse is_atom(File)) ->
     case make_binary(Bytes) of
 	Bin when is_binary(Bin) ->
-	    io:request(File, {put_chars,latin1,Bin});
+	    echk(io:request(File, {put_chars,latin1,Bin}));
 	Error ->
 	    Error
     end;
 write(#file_descriptor{module = Module} = Handle, Bytes) ->
-    Module:write(Handle, Bytes);
+    echk(Module:write(Handle, Bytes));
 write(_, _) ->
     {error, badarg}.
 
@@ -693,7 +711,7 @@ write(_, _) ->
 pwrite(File, L) when is_pid(File), is_list(L) ->
     pwrite_int(File, L, 0);
 pwrite(#file_descriptor{module = Module} = Handle, L) when is_list(L) ->
-    Module:pwrite(Handle, L);
+    echk(Module:pwrite(Handle, L));
 pwrite(_, _) ->
     {error, badarg}.
 
@@ -704,7 +722,7 @@ pwrite_int(File, [{At, Bytes} | T], R) ->
 	ok ->
 	    pwrite_int(File, T, R+1);
 	{error, Reason} ->
-	    {error, {R, Reason}}
+	    echk({error, {R, Reason}})
     end;
 pwrite_int(_, _, _) ->
     {error, badarg}.
@@ -718,7 +736,7 @@ pwrite_int(_, _, _) ->
 pwrite(File, At, Bytes) when is_pid(File) ->
     file_request(File, {pwrite, At, Bytes});
 pwrite(#file_descriptor{module = Module} = Handle, Offs, Bytes) ->
-    Module:pwrite(Handle, Offs, Bytes);
+    echk(Module:pwrite(Handle, Offs, Bytes));
 pwrite(_, _, _) ->
     {error, badarg}.
 
@@ -729,7 +747,7 @@ pwrite(_, _, _) ->
 datasync(File) when is_pid(File) ->
     file_request(File, datasync);
 datasync(#file_descriptor{module = Module} = Handle) ->
-    Module:datasync(Handle);
+    echk(Module:datasync(Handle));
 datasync(_) ->
     {error, badarg}.
 
@@ -740,7 +758,7 @@ datasync(_) ->
 sync(File) when is_pid(File) ->
     file_request(File, sync);
 sync(#file_descriptor{module = Module} = Handle) ->
-    Module:sync(Handle);
+    echk(Module:sync(Handle));
 sync(_) ->
     {error, badarg}.
 
@@ -1602,7 +1620,7 @@ call(Command, Args) when is_list(Args) ->
     Y = gen_server:call(?FILE_SERVER, list_to_tuple([Command | Args]), 
 			infinity),
     erlang:dt_restore_tag(X),
-    Y.
+    echk(Y).
 
 check_and_call(Command, Args) when is_list(Args) ->
     case check_args(Args) of
@@ -1632,7 +1650,7 @@ file_request(Io, Request) ->
     receive
 	{file_reply,Ref,Reply} ->
 	    erlang:demonitor(Ref, [flush]),
-	    Reply;
+	    echk(Reply);
 	{'DOWN', Ref, _, _, _} ->
 	    {error, terminated}
     end.
