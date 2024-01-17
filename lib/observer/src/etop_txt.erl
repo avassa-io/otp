@@ -48,7 +48,7 @@ loop(Prev,Config) ->
     Info = do_update(Prev,Config),
     receive 
 	stop -> stopped;
-	{dump,Fd} -> do_update(Fd,Info,Prev,Config), loop(Info,Config);
+	{dump,Fd} -> _ = do_update(Fd,Info,Prev,Config), loop(Info,Config);
 	{config,_,Config1} -> loop(Info,Config1)
     after Config#opts.intv -> loop(Info,Config)
     end.
@@ -59,7 +59,8 @@ do_update(Prev,Config) ->
 
 do_update(Fd,Info,Prev,Config) ->
     {Cpu,NProcs,RQ,Clock} = loadinfo(Info,Prev),
-    FieldWidths = calc_field_widths(Info#etop_info.procinfo),
+    HR = Config#opts.human_readable,
+    FieldWidths = calc_field_widths(Info#etop_info.procinfo, HR),
     io:nl(Fd),
     writedoubleline(Fd, FieldWidths),
     case Info#etop_info.memi of
@@ -75,20 +76,20 @@ do_update(Fd,Info,Prev,Config) ->
 		meminfo(Memi, [total,processes,atom,binary,code,ets]),
 	    io:fwrite(Fd, ?SYSFORM,
 		      [Config#opts.node,Clock,
-		       Cpu,Tot,Bin,
-		       NProcs,Procs,Code,
-		       RQ,Atom,Ets])
+		       Cpu,fmt_bytes(HR, Tot), fmt_bytes(HR, Bin),
+		       NProcs,fmt_bytes(HR, Procs), fmt_bytes(HR, Code),
+		       RQ,fmt_bytes(HR, Atom), fmt_bytes(HR, Ets)])
     end,
     io:nl(Fd),
     writepinfo_header(Fd, FieldWidths),
     writesingleline(Fd, FieldWidths),
-    writepinfo(Fd, Info#etop_info.procinfo, modifier(Fd), FieldWidths),
+    writepinfo(Fd, Info#etop_info.procinfo, modifier(Fd), HR, FieldWidths),
     writedoubleline(Fd, FieldWidths),
     io:nl(Fd),
     Info.
 
 
-calc_field_widths(ProcInfoL) ->
+calc_field_widths(ProcInfoL, HR) ->
     Cols = case io:columns() of
                {ok, IoCols}     -> max(IoCols, ?DEFAULT_WIDTH);
                {error, enotsup} -> ?DEFAULT_WIDTH
@@ -105,15 +106,15 @@ calc_field_widths(ProcInfoL) ->
     %% Columns: pid, init_func, time, reds, mem, msgq, curr_func.
     ColsLeft0 = Cols - 15 - 20 - 8 - 8 - 1 - 8 - 1 - 8 - 20,
 
-    RedsWidth = get_width(reds, ProcInfoL, ColsLeft0),
+    RedsWidth = get_width(reds, false, ProcInfoL, ColsLeft0),
 
     ColsLeft1 = ColsLeft0 + 8 - RedsWidth,
 
-    MemWidth = get_width(mem, ProcInfoL, ColsLeft1),
+    MemWidth = get_width(mem, HR, ProcInfoL, ColsLeft1),
 
     ColsLeft2 = ColsLeft1 + 8 - MemWidth,
 
-    MsgQWidth= get_width(msgq, ProcInfoL, ColsLeft2),
+    MsgQWidth= get_width(msgq, false, ProcInfoL, ColsLeft2),
 
     ColsLeft3 = ColsLeft2 + 8 - MsgQWidth,
 
@@ -142,18 +143,20 @@ calc_field_widths(ProcInfoL) ->
                   curr_func = CurrFuncWidth}.
 
 
-get_width(reds, ProcInfoL, ColsLeft) ->
-    get_width(4, ProcInfoL, ColsLeft);
-get_width(mem, ProcInfoL, ColsLeft) ->
-    get_width(3, ProcInfoL, ColsLeft);
-get_width(msgq, ProcInfoL, ColsLeft) ->
-    get_width(8, ProcInfoL, ColsLeft);
+get_width(reds, HR, ProcInfoL, ColsLeft) ->
+    get_width(4, HR, ProcInfoL, ColsLeft);
+get_width(mem, HR, ProcInfoL, ColsLeft) ->
+    get_width(3, HR, ProcInfoL, ColsLeft);
+get_width(msgq, HR, ProcInfoL, ColsLeft) ->
+    get_width(8, HR, ProcInfoL, ColsLeft);
 
 %% Get the maximum width of the field at place N in #sysinfo{}.
 %% Calculate the maximum width by taking the maximum width (by taking common
 %% logarithm of largest number) then check if is larger than 8 and that it
 %% fits the column budget, if so return that value; otherwise return 8.
-get_width(N, ProcInfoL, ColsLeft) ->
+get_width(_, true, _ProcInfoL, _ColsLeft) ->
+    11;
+get_width(N, false, ProcInfoL, ColsLeft) ->
     MaxNum = lists:foldr(fun(Info, Acc)
                                when element(N, Info) > Acc ->
                                  element(N, Info);
@@ -206,12 +209,12 @@ writepinfo(Fd,[#etop_proc_info{pid=Pid,
 			       cf=MFA,
 			       mq=MQ}
 	       |T],
-           Modifier, FieldWidths) ->
+           Modifier, HR, FieldWidths) ->
     io:fwrite(Fd,proc_format(Modifier, FieldWidths),
-              [Pid,to_string(Name,Modifier),Time,Reds,Mem,MQ,
+              [Pid,to_string(Name,Modifier),Time,Reds,fmt_bytes(HR, Mem),MQ,
                to_string(MFA,Modifier)]),
-    writepinfo(Fd,T,Modifier, FieldWidths);
-writepinfo(_Fd,[],_,_) ->
+    writepinfo(Fd,T,Modifier, HR, FieldWidths);
+writepinfo(_Fd,[],_,_,_) ->
     ok.
 
 proc_format(Modifier, #field_widths{init_func = InitFunc, reds = Reds,
@@ -221,7 +224,7 @@ proc_format(Modifier, #field_widths{init_func = InitFunc, reds = Reds,
     "~-" ++ i2l(InitFunc) ++ Modifier ++ "s"
     "~8w"
     "~" ++ i2l(Reds) ++ "w "
-    "~" ++ i2l(Mem) ++"w "
+    "~" ++ i2l(Mem) ++"s "
     "~" ++ i2l(MsgQ) ++ "w "
     "~-" ++ i2l(CurrFunc) ++ Modifier ++ "s~n".
 
@@ -247,3 +250,31 @@ encoding(Device) ->
             latin1
     end.
 
+-define(Ki, 1024).
+-define(Mi, (1024*?Ki)).
+-define(Gi, (1024*?Mi)).
+-define(Ti, (1024*?Gi)).
+
+
+fmt_bytes(false, B) ->
+    integer_to_binary(B);
+fmt_bytes(true, B) ->
+    fmt_bytes(B).
+
+fmt_bytes(B) ->
+    fmt_bytes1(B, 2).
+fmt_bytes1(B, FractionDigits) ->
+    if B < ?Ki ->
+            [integer_to_binary(B), <<" B  ">>];
+       B < ?Mi ->
+            [fmt_decimal(B / ?Ki, FractionDigits), " KiB"];
+       B < ?Gi ->
+            [fmt_decimal(B / ?Mi, FractionDigits), " MiB"];
+       B < ?Ti ->
+            [fmt_decimal(B / ?Gi, FractionDigits), " GiB"];
+       true ->
+            [fmt_decimal(B / ?Ti, FractionDigits), " TiB"]
+    end.
+
+fmt_decimal(D, FractionDigits) ->
+    io_lib:format("~.*f", [FractionDigits, D]).
