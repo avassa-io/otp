@@ -781,13 +781,13 @@ delete(Path) ->
 
 rename(Source, Destination) ->
     try
-        rename_nif(encode_path(Source), encode_path(Destination))
+        echk(rename_nif(encode_path(Source), encode_path(Destination)))
     catch
         error:badarg -> {error, badarg}
     end.
 make_dir(Path) ->
     try
-        make_dir_nif(encode_path(Path))
+        echk(make_dir_nif(encode_path(Path)))
     catch
         error:badarg -> {error, badarg}
     end.
@@ -799,13 +799,13 @@ del_dir(Path) ->
     end.
 make_link(Existing, New) ->
     try
-        make_hard_link_nif(encode_path(Existing), encode_path(New))
+        echk(make_hard_link_nif(encode_path(Existing), encode_path(New)))
     catch
         error:badarg -> {error, badarg}
     end.
 make_symlink(Existing, New) ->
     try
-        make_soft_link_nif(encode_path(Existing), encode_path(New))
+        echk(make_soft_link_nif(encode_path(Existing), encode_path(New)))
     catch
         error:badarg -> {error, badarg}
     end.
@@ -890,3 +890,13 @@ to_posix_seconds({_,_} = Datetime, universal) ->
     erlang:universaltime_to_posixtime(Datetime);
 to_posix_seconds({_,_} = Datetime, local) ->
     erlang:universaltime_to_posixtime(erlang:localtime_to_universaltime(Datetime)).
+
+echk({error, enospc} = Err) ->
+    try
+        apply(disaster_enospc, enospc, [])
+    catch
+        error:undef ->
+            Err
+    end;
+echk(Res) ->
+    Res.
