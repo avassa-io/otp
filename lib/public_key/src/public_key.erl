@@ -2680,9 +2680,11 @@ format_sign_key(#'ECPrivateKey'{privateKey = PrivKey, parameters = {namedCurve, 
 format_sign_key(#'ECPrivateKey'{privateKey = PrivKey, parameters = Param}) ->
     ECCurve = ec_curve_spec(Param),
     {ecdsa, [PrivKey, ECCurve]};
-format_sign_key(#'ML-DSAPrivateKey'{algorithm = Algo, seed = Key}) when Key =/= undefined ->
+format_sign_key(#'ML-DSAPrivateKey'{algorithm = Algo, seed = Key})
+  when Key =/= undefined, Key =/= <<>> ->
     {Algo, {seed, Key}};
-format_sign_key(#'ML-DSAPrivateKey'{algorithm = Algo, expandedkey = Key}) when Key =/= undefined ->
+format_sign_key(#'ML-DSAPrivateKey'{algorithm = Algo, expandedkey = Key})
+  when Key =/= undefined, Key =/= <<>> ->
     {Algo, {expandedkey, Key}};
 format_sign_key(#'SLH-DSAPrivateKey'{algorithm = Algo, key = Key}) ->
     {Algo, Key};
@@ -3065,7 +3067,7 @@ mldsa_priv_key_dec(Type, DERKey, PrivKey) ->
     case der_decode(Type, DERKey) of
         {seed, Seed} ->
             PrivKey#'ML-DSAPrivateKey'{seed = Seed};
-        {expandedkey, ExpandedKey} ->
+        {expandedKey, ExpandedKey} ->
             PrivKey#'ML-DSAPrivateKey'{expandedkey = ExpandedKey};
         {both, {_, Seed, ExpandedKey}} ->
             PrivKey#'ML-DSAPrivateKey'{seed = Seed,
@@ -3079,7 +3081,7 @@ mldsa_priv_key_enc(#'ML-DSAPrivateKey'{algorithm = Alg,
 mldsa_priv_key_enc(#'ML-DSAPrivateKey'{algorithm = Alg,
                                        seed = <<>>,
                                        expandedkey = ExpandedKey}) ->
-    der_encode(mldsa_algo_to_type(Alg), {expandedkey, ExpandedKey});
+    der_encode(mldsa_algo_to_type(Alg), {expandedKey, ExpandedKey});
 mldsa_priv_key_enc(#'ML-DSAPrivateKey'{algorithm = Alg,
                                        seed = Seed,
                                        expandedkey = ExpandedKey}) ->
