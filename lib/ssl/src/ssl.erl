@@ -2118,6 +2118,7 @@ Key value list convening some information about the established connection.
 -type connection_info() :: [{protocol, protocol_version()} |
                             {session_resumption, boolean()} |
                             {selected_cipher_suite, erl_cipher_suite()} |
+                            {selected_group, group()} |
                             {sni_hostname, term()} |
                             {ciphers, [erl_cipher_suite()]}] |
                            connection_info_pre_tls13() |
@@ -2153,6 +2154,7 @@ TLS connection keys for which information can be retrieved.
 """.
 -type connection_info_keys() :: [ protocol
                                 | selected_cipher_suite
+                                | selected_group
                                 | sni_hostname
                                 | session_resumption
                                 | ciphers
